@@ -31,18 +31,14 @@ class PageType(object):
         'right': (400, content_pos[1], 380, 500),
     }
 
-    def render_background(self, ctx, fields):
+    def render_background(self, visitor):
         pass
 
     def get_output_rect(self, output_name):
         return self._output_map[output_name]
 
 class default(PageType):
-    def render_background(self, ctx, fields):
-        pass
+    pass
 
 class cover(PageType):
     title_pos = 30, 200
-
-    def render_background(self, ctx, fields):
-        pass

@@ -6,7 +6,8 @@ import cairo
 from rstslide_template import PageType, default, cover
 
 class default(default):
-    def render_background(self, ctx, fields):
+    def render_background(self, visitor):
+        ctx, fields = visitor.ctx, visitor.fields
         liner = cairo.LinearGradient(0, 0, 800, 0)
         liner.add_color_stop_rgb(0, 0.7539, 0.7539, 0.7539)
         liner.add_color_stop_rgb(0.5, 0.7227, 0.7227, 0.7227)
@@ -33,10 +34,11 @@ class default(default):
         ctx.show_text('BWP')
 
 class cover(cover):
-    title_pos = 400, 300
+    title_pos = 350, 300
     title_color = 1.0, 1.0, 1.0
 
-    def render_background(self, ctx, fields):
+    def render_background(self, visitor):
+        ctx, fields = visitor.ctx, visitor.fields
         ctx.set_source_rgb(0.46666667, 0.717647, 0.90588)
         ctx.rectangle(0, 0, 280, 240)
         ctx.fill()

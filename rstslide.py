@@ -10,7 +10,6 @@ from os import tmpnam, unlink
 
 import rstslide_template
 
-#TODO: field support, like author, company...
 #TODO: howto host to web
 
 class ListOptions(object):
@@ -51,7 +50,7 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
         docutils.utils.nodes.NodeVisitor.__init__(self, document)
         surface = cairo.PDFSurface(output_file, 800, 600)
         self.fields = {}
-        ctx = self.__ctx = cairo.Context(surface)
+        ctx = self.ctx = cairo.Context(surface)
         self.__set_template(template)
         ctx.set_line_width(1.0)
         self.__list_level = 0
@@ -65,7 +64,7 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
     def switch_page_type(self, type_name):
         page_type = getattr(self.__template, type_name)()
         self.__page_type = page_type
-        ctx = self.__ctx
+        ctx = self.ctx
         ctx.select_font_face(page_type.font_face, cairo.FONT_SLANT_NORMAL,
                 cairo.FONT_WEIGHT_NORMAL)
         ctx.set_font_size(page_type.font_size)
@@ -77,47 +76,54 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
         ctx.set_source_rgb(1.0, 1.0, 1.0)
         ctx.paint()
         ctx.set_source_rgb(0, 0, 0)
-        page_type.render_background(ctx, self.fields)
+        page_type.render_background(self)
         ctx.restore()
-        
-    def do_visit_text(self, text):
-        text = text.replace('\n', '')
+
+    def adjust_x_by_align(self, left, right, expected_width, align):
+        if align == 'center':
+            width = right - left
+            return left + (width - expected_width) / 2
+        elif align == 'right':
+            return right - expected_width
+        return left
+
+    def visit_Text(self, text):
+        text = text.astext().replace('\n', '')
+        ctx = self.ctx
+
         while text:
             w = 0
             for idx, ch in enumerate(text):
-                self.__ctx.show_text(ch)
-                w = self.__ctx.get_current_point()[0]
+                w = ctx.text_extents(ch)[3] + ctx.get_current_point()[0]
                 if w >= self.__cur_para_margin_right:
-                    text = text[idx+1:]
+                    text = text[idx:]
                     break
+                ctx.show_text(ch)
             else:
                 text = ''
             if text:
                 self.__newline()
-                self.__ctx.rel_move_to(self.__cur_para_margin_left,
+                ctx.rel_move_to(self.__cur_para_margin_left,
                         self.__page_type.para_line_height)
 
-    def visit_Text(self, text):
-        self.do_visit_text(text.astext())
-
     def __newline(self):
-        ctx = self.__ctx
+        ctx = self.ctx
         pos = ctx.get_current_point()
         extents = ctx.text_extents(u'啊')
         ctx.move_to(0, pos[1] + extents[3])
 
     def visit_strong(self, node):
-        ctx = self.__ctx
+        ctx = self.ctx
         ctx.save()
         cur_face = ctx.get_font_face()
         ctx.select_font_face(cur_face.get_family(), cur_face.get_slant(),
                 cairo.FONT_WEIGHT_BOLD)
 
     def depart_strong(self, node):
-        self.__ctx.restore()
+        self.ctx.restore()
 
     def visit_emphasis(self, node):
-        ctx = self.__ctx
+        ctx = self.ctx
         ctx.save()
         cur_face = ctx.get_font_face()
         ctx.select_font_face(cur_face.get_family(), cairo.FONT_SLANT_ITALIC,
@@ -126,7 +132,7 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
     depart_emphasis = depart_strong
 
     def visit_literal(self, node):
-        ctx = self.__ctx
+        ctx = self.ctx
         ctx.save()
         cur_face = ctx.get_font_face()
         ctx.select_font_face(self.__page_type.monospace_font_face, cur_face.get_slant(),
@@ -137,7 +143,7 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
     def visit_block_quote(self, quote):
         self.__cur_para_margin_left = self.__page_type.block_quote_margin_left
         self.__cur_para_margin_right = self.__page_type.block_quote_margin_right
-        ctx = self.__ctx
+        ctx = self.ctx
         ctx.save()
         ctx.set_font_size(self.__page_type.block_quote_font_size)
         ctx.select_font_face(self.__page_type.block_quote_font_face,
@@ -146,18 +152,18 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
     def depart_block_quote(self, quote):
         self.__cur_para_margin_left = self.__page_type.margin_left
         self.__cur_para_margin_right = self.__page_type.margin_right
-        self.__ctx.restore()
-        self.__ctx.rel_move_to(0, self.__page_type.para_after_height)
+        self.ctx.restore()
+        self.ctx.rel_move_to(0, self.__page_type.para_after_height)
 
     def visit_paragraph(self, para):
-        self.__ctx.rel_move_to(self.__cur_para_margin_left, 0)
+        self.ctx.rel_move_to(self.__cur_para_margin_left, 0)
 
     def depart_paragraph(self, para):
         self.__newline()
-        self.__ctx.rel_move_to(0, self.__page_type.para_after_height)
+        self.ctx.rel_move_to(0, self.__page_type.para_after_height)
 
     def visit_title(self, title):
-        ctx = self.__ctx
+        ctx = self.ctx
         ctx.save()
         ctx.move_to(*self.__page_type.title_pos)
         ctx.set_font_size(self.__page_type.title_font_size)
@@ -172,7 +178,7 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
         self.__cur_para_margin_left -= size
 
     def visit_list_item(self, list_item):
-        ctx = self.__ctx
+        ctx = self.ctx
         pos = ctx.get_current_point()
         extents = ctx.text_extents(u'啊')
         def draw_bullet():
@@ -206,8 +212,8 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
         self.undent()
 
     def depart_title(self, title):
-        self.__ctx.restore()
-        self.__ctx.move_to(0, self.__page_type.content_pos[1])
+        self.ctx.restore()
+        self.ctx.move_to(0, self.__page_type.content_pos[1])
 
     def unknown_visit(self, node):
         raise NotImplementedError(
@@ -220,12 +226,12 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
             % (self.__class__, node.__class__.__name__))
 
     def visit_new_page(self, node):
-        self.__ctx.show_page()
+        self.ctx.show_page()
         self.switch_page_type('default')
-        self.__ctx.move_to(0, self.__page_type.content_pos[1])
+        self.ctx.move_to(0, self.__page_type.content_pos[1])
 
     def visit_pause(self, node):
-        self.__ctx.copy_page()
+        self.ctx.copy_page()
 
     def visit_system_message(self, msg):
         print msg.astext()
@@ -249,7 +255,7 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
         self.__list_level -= 1
         if self.__list_level:
             self.__cur_para_margin_left -= self.__page_type.sub_list_indent
-        self.__ctx.rel_move_to(0, self.__page_type.para_after_height)
+        self.ctx.rel_move_to(0, self.__page_type.para_after_height)
 
     depart_bullet_list = depart_enumerated_list
 
@@ -281,7 +287,7 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
                 return result
             return cairo.ImageSurface.create_from_png(file)
 
-        ctx = self.__ctx
+        ctx = self.ctx
         ctx.save()
         img_surface = load_image(node['uri'])
         width = float(node['width']) if node.has_key('width') else \
@@ -297,17 +303,12 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
         img_surface = scale_surface(img_surface, width, height)
 
         pos = ctx.get_current_point()
-        x = pos[0]
-        if align == 'center':
-            width = self.__cur_para_margin_right - self.__cur_para_margin_left
-            x = (width - img_surface.get_width()) / 2
-            x += self.__cur_para_margin_left
-        elif align == 'right':
-            x = self.__cur_para_margin_right - \
-                img_surface.get_width()
+        x = self.adjust_x_by_align(self.__cur_para_margin_left,
+                self.__cur_para_margin_right, img_surface.get_width(), align)
         pos = x, pos[1]
+        del x
         
-        ctx.set_source_surface(img_surface, x, pos[1])
+        ctx.set_source_surface(img_surface, pos[0], pos[1])
         ctx.paint()
 
         ctx.restore()
@@ -325,7 +326,7 @@ class Visitor(docutils.utils.nodes.NodeVisitor):
 
     def visit_output_to(self, output_to):
         pos = self.__page_type.get_output_rect(output_to.output)
-        self.__ctx.move_to(0, pos[1])
+        self.ctx.move_to(0, pos[1])
         self.__cur_para_margin_left = pos[0]
         self.__cur_para_margin_right = pos[0] + pos[2]
 
